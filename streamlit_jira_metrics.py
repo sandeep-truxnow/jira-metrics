@@ -1027,7 +1027,7 @@ def main():
     # --- Sidebar for Jira Credentials and General Report Options ---
     with st.sidebar:
         st.header("Jira Connection")
-        jira_url = st.text_input("Jira URL", value=st.session_state.jira_conn_details[0] if st.session_state.jira_conn_details else "https://<org_name>.atlassian.net", help="e.g., https://<org_name>.atlassian.net", key="sidebar_jira_url")
+        jira_url = st.text_input("Jira URL", value=st.session_state.jira_conn_details[0] if st.session_state.jira_conn_details else "https://truxinc.atlassian.net", help="e.g., https://truxinc.atlassian.net", key="sidebar_jira_url")
         jira_username = st.text_input("Jira Email/Username", value=st.session_state.jira_conn_details[1] if st.session_state.jira_conn_details else "", help="Your Jira email or username for API access.", key="sidebar_jira_username")
         jira_api_token = st.text_input("Jira API Token", type="password", value=st.session_state.jira_conn_details[2] if st.session_state.jira_conn_details else "", help="Generate from your Atlassian account security settings.", key="sidebar_jira_api_token")
         
