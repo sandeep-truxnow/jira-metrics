@@ -82,13 +82,13 @@ if 'selected_search_option_key' not in st.session_state:
 if 'ticket_keys_input' not in st.session_state:
     st.session_state.ticket_keys_input = ""
 if 'selected_team_name' not in st.session_state:
-    st.session_state.selected_team_name = None
+    st.session_state.selected_team_name = list(TEAMS_DATA.keys())[0] 
 if 'selected_team_id' not in st.session_state:
-    st.session_state.selected_team_id = None
+    st.session_state.selected_team_id = TEAMS_DATA[list(TEAMS_DATA.keys())[0]]
 if 'selected_duration_name' not in st.session_state:
-    st.session_state.selected_duration_name = None
+    st.session_state.selected_duration_name = list(DURATIONS_DATA.keys())[0] 
 if 'selected_duration_func' not in st.session_state:
-    st.session_state.selected_duration_func = None
+    st.session_state.selected_duration_func = DURATIONS_DATA[list(DURATIONS_DATA.keys())[0]]
 if 'selected_custom_start_date' not in st.session_state:
     st.session_state.selected_custom_start_date = None
 if 'selected_custom_end_date' not in st.session_state:
@@ -375,7 +375,7 @@ def get_available_projects_streamlit(jira_url, jira_username, jira_api_token):
 #     add_app_message("info", f"Will allow free-text input for this field.")
 #     return []
 
-# === GET ISSUES FROM JQL (from your ipynb) ===
+# === GET ISSUES FROM JQL ===
 def get_issues_by_jql(jql, jira_url, username, api_token):
     auth = HTTPBasicAuth(username, api_token)
     if not jql.strip():
@@ -409,7 +409,7 @@ def get_issues_by_jql(jql, jira_url, username, api_token):
             st.stop()
     return issue_keys
 
-# === FORMAT DURATION === (from your ipynb)
+# === FORMAT DURATION ===
 def format_duration(hours):
     if hours is None: return "N/A"
     if hours < 24: return f"{int(round(hours))} hrs"
@@ -417,7 +417,7 @@ def format_duration(hours):
     rem_hrs = int(round(hours % 24))
     return f"{days} days" if rem_hrs == 0 else f"{days} days {rem_hrs} hrs"
 
-# === GET ISSUE WITH CHANGELOG === (from your ipynb)
+# === GET ISSUE WITH CHANGELOG ===
 def get_issue_changelog(issue_key, jira_url, username, api_token):
     auth = HTTPBasicAuth(username, api_token)
     url = f"{jira_url}/rest/api/3/issue/{issue_key}?expand=changelog"
@@ -432,7 +432,7 @@ def get_issue_changelog(issue_key, jira_url, username, api_token):
         add_app_message("error", f"An unexpected error occurred fetching changelog for {issue_key}: {e}")
         raise
 
-# === EXCEL FORMATTER === (from your ipynb)
+# === EXCEL FORMATTER ===
 def format_excel(df, output_file_label, cycle_threshold, lead_threshold):
     if cycle_threshold <= 0 or lead_threshold <= 0:
         raise ValueError("Cycle Time and Lead Time thresholds must be positive integers.")
@@ -452,7 +452,7 @@ def format_excel(df, output_file_label, cycle_threshold, lead_threshold):
     output_buffer.seek(0)
     return output_buffer
 
-# === FORMAT SHEET === (from your ipynb)
+# === FORMAT SHEET ===
 def format_sheet(sheet, headers, cycle_threshold, lead_threshold, output_file_label):
     create_table(sheet)
     freeze_top_row(sheet)
@@ -462,14 +462,14 @@ def format_sheet(sheet, headers, cycle_threshold, lead_threshold, output_file_la
     highlight_current_sprint_multiline(sheet, headers, selected_team_name_for_sprints) 
     highlight_long_durations(sheet, cycle_threshold, lead_threshold)
 
-# === TABLE CREATION AND FORMATTING === (from your ipynb)
+# === TABLE CREATION AND FORMATTING ===
 def create_table(sheet):
     table = Table(displayName="JIRAMetricsTable", ref=f"A1:{get_column_letter(sheet.max_column)}{sheet.max_row}")
     style = TableStyleInfo(name="TableStyleMedium1", showFirstColumn=False, showLastColumn=False, showRowStripes=True)
     table.tableStyleInfo = style
     sheet.add_table(table)
 
-# === SHEET FORMATTING FUNCTIONS === (from your ipynb)
+# === SHEET FORMATTING FUNCTIONS ===
 def freeze_top_row(sheet):
     sheet.freeze_panes = "B2"
 
