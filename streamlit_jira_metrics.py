@@ -990,7 +990,7 @@ def calculate_heatmap_color_blue_gradient(intensity):
 
 # --- Main Streamlit App Layout ---
 def main():
-    st.set_page_config(layout="wide", page_title="Jira Cycle Time Reporter")
+    st.set_page_config(layout="wide", page_title="Jira Cycle Time Reporter", page_icon=":bar_chart:")
 
     # --- Initialize ALL session state variables at the VERY TOP OF MAIN() ---
     if 'app_messages' not in st.session_state: st.session_state.app_messages = []
