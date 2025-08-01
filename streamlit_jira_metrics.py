@@ -410,12 +410,31 @@ def get_issues_by_jql(jql, jira_url, username, api_token):
     return issue_keys
 
 # === FORMAT DURATION ===
+# def format_duration(hours):
+#     if hours is None: return "N/A"
+#     if hours < 24: return f"{int(round(hours))} hrs"
+#     days = int(hours // 24)
+#     rem_hrs = int(round(hours % 24))
+#     return f"{days} days" if rem_hrs == 0 else f"{days} days {rem_hrs} hrs"
+
 def format_duration(hours):
-    if hours is None: return "N/A"
-    if hours < 24: return f"{int(round(hours))} hrs"
-    days = int(hours // 24)
-    rem_hrs = int(round(hours % 24))
-    return f"{days} days" if rem_hrs == 0 else f"{days} days {rem_hrs} hrs"
+    if hours is None:
+        return "N/A"
+    total_minutes = int(round(hours * 60))  # Convert to minutes
+    days = total_minutes // (24 * 60)
+    rem_minutes = total_minutes % (24 * 60)
+    hrs = rem_minutes // 60
+    mins = rem_minutes % 60
+
+    parts = []
+    if days > 0:
+        parts.append(f"{days} days")
+    if hrs > 0:
+        parts.append(f"{hrs} hrs")
+    if mins > 0 or not parts:
+        parts.append(f"{mins} mins")
+
+    return " ".join(parts)
 
 # === GET ISSUE WITH CHANGELOG ===
 def get_issue_changelog(issue_key, jira_url, username, api_token):
