@@ -947,7 +947,6 @@ def create_row(meta, metrics, selected_team_name):
     durations = metrics['durations_by_status_hours']
     row = {
         **meta,
-        # "Failed QA Count": metrics['failed_qa_count'], 
         "Cycle Time": format_duration(metrics['cycle_time_hours']),
         "Lead Time": format_duration(metrics['lead_time_hours']),
     }
