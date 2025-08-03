@@ -471,18 +471,27 @@ def seconds_to_dhm(seconds):
     minutes = (seconds % 3600) // 60
     return f"{days} days {hours} hrs {minutes} mins"
 
+def seconds_to_hm(seconds_str):
+    try:
+        seconds = int(seconds_str)
+    except (ValueError, TypeError):
+        return "Invalid input"
+
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    return f"{hours} hrs {minutes} mins"
+
 def get_logged_time(histories):
-    logged_time_in_seconds = None
-    for history in histories:
-        for item in history['items']:
-            if item['field'] == 'timespent':
-                logged_time_in_seconds = item['to']
-                break
+    logged_time_in_seconds = 0
+    latest_history = histories[0] if histories else None
+    
+    for item in latest_history['items']:
+        if item['field'] == 'timespent':
+            logged_time_in_seconds = int(item['to'])
 
-    if logged_time_in_seconds is not None:
-        logged_time_str = seconds_to_dhm(int(logged_time_in_seconds))
+    logged_time_str = seconds_to_hm(int(logged_time_in_seconds))
 
-        return logged_time_str
+    return logged_time_str
 
 # === EXCEL FORMATTER ===
 def format_excel(df, output_file_label, cycle_threshold, lead_threshold):
