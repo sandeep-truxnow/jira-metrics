@@ -465,6 +465,25 @@ def count_transitions(histories, from_status, to_status):
 
     return count
 
+def seconds_to_dhm(seconds):
+    days = seconds // 86400
+    hours = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    return f"{days} days {hours} hrs {minutes} mins"
+
+def get_logged_time(histories):
+    logged_time_in_seconds = None
+    for history in histories:
+        for item in history['items']:
+            if item['field'] == 'timespent':
+                logged_time_in_seconds = item['to']
+                break
+
+    if logged_time_in_seconds is not None:
+        logged_time_str = seconds_to_dhm(int(logged_time_in_seconds))
+
+        return logged_time_str
+
 # === EXCEL FORMATTER ===
 def format_excel(df, output_file_label, cycle_threshold, lead_threshold):
     if cycle_threshold <= 0 or lead_threshold <= 0:
@@ -894,8 +913,9 @@ def extract_issue_meta(key, issue_data):
     failed_qa_count = count_transitions(histories, "In Testing", "Rejected")
     if failed_qa_count is None:
         failed_qa_count = 0  # Default to 0 if no transitions found
-    
-    st.info(f"Extracted issue meta for {key}: Type={fields['issuetype']['name']}, Summary={fields['summary']}, Assignee={fields['assignee']['displayName'] if fields['assignee'] else 'Unassigned'}, Status={fields['status']['name']}, Story Points={story_points_value}, Sprints={sprint_str}, Failed QA Count={failed_qa_count}")
+
+    logged_time = get_logged_time(histories)    
+    # st.info(f"Extracted issue meta for {key}: Type={fields['issuetype']['name']}, Summary={fields['summary']}, Assignee={fields['assignee']['displayName'] if fields['assignee'] else 'Unassigned'}, Status={fields['status']['name']}, Story Points={story_points_value}, Sprints={sprint_str}, Failed QA Count={failed_qa_count}, Logged Time={logged_time}")
 
     return {
         "Key": key,
@@ -906,11 +926,12 @@ def extract_issue_meta(key, issue_data):
         "Story Points": story_points_value, # Use the potentially converted int/string value
         "Sprints": sprint_str,
         "Failed QA Count": failed_qa_count,
+        "Logged Time": logged_time,
     }
 
 # === GENERATE HEADERS ===
 def generate_headers():
-    return ["Key", "Type", "Summary", "Assignee", "Status", "Story Points", "Sprints", "Failed QA Count", "Cycle Time", "Lead Time"] + WORKFLOW_STATUSES
+    return ["Key", "Type", "Summary", "Assignee", "Status", "Story Points", "Sprints", "Failed QA Count", "Logged Time", "Cycle Time", "Lead Time"] + WORKFLOW_STATUSES
 
 # === CREATE ROW FOR EXPORT ===
 def create_row(meta, metrics, selected_team_name):
