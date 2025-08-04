@@ -103,31 +103,31 @@ if 'generated_report_filename' not in st.session_state:
 
 
 # --- Global Message Handling ---
-def _update_message_display_area():
-    if st.session_state.message_placeholder_area is None:
-        return
-    placeholder_widget = st.session_state.message_placeholder_area
-    placeholder_widget.empty()
+# def _update_message_display_area():
+#     if st.session_state.message_placeholder_area is None:
+#         return
+#     placeholder_widget = st.session_state.message_placeholder_area
+#     placeholder_widget.empty()
 
-    if st.session_state.app_messages:
-        with placeholder_widget.container(border=True):
-            for msg_type, msg_content in st.session_state.app_messages:
-                if msg_type == "success": st.success(msg_content)
-                elif msg_type == "info": st.info(msg_content)
-                elif msg_type == "warning": st.warning(msg_content)
-                elif msg_type == "error": st.error(msg_content)
+#     if st.session_state.app_messages:
+#         with placeholder_widget.container(border=True):
+#             for msg_type, msg_content in st.session_state.app_messages:
+#                 if msg_type == "success": st.success(msg_content)
+#                 elif msg_type == "info": st.info(msg_content)
+#                 elif msg_type == "warning": st.warning(msg_content)
+#                 elif msg_type == "error": st.error(msg_content)
             
-            if st.button("Clear all notifications", key="clear_all_notifications_btn"):
-                st.session_state.app_messages = []
-                placeholder_widget.empty()
-                st.rerun()
-    else: placeholder_widget.empty()
+#             if st.button("Clear all notifications", key="clear_all_notifications_btn"):
+#                 st.session_state.app_messages = []
+#                 placeholder_widget.empty()
+#                 st.rerun()
+#     else: placeholder_widget.empty()
 
 def add_app_message(msg_type, msg_content):
     if 'app_messages' not in st.session_state: st.session_state.app_messages = []
     st.session_state.app_messages.append((msg_type, msg_content))
-    if st.session_state.message_placeholder_area is not None:
-        _update_message_display_area()
+    # if st.session_state.message_placeholder_area is not None:
+        # _update_message_display_area()
 
 # --- Jira Connection Function ---
 @st.cache_resource
@@ -1031,7 +1031,7 @@ def main():
 
 
     # Display global messages at the very top
-    _update_message_display_area()
+    # _update_message_display_area()
 
     st.title("Jira Cycle Time Reporter")
     st.markdown("""
@@ -1258,116 +1258,122 @@ def main():
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
-    
+    # st.markdown("---")
+    with st.expander("View Processing Logs"):
+        if st.session_state.app_messages:
+            for log_msg in st.session_state.app_messages:
+                st.code(log_msg, language="text")
+        else:
+            st.info("No logs generated yet. Click 'Generate Metrics' to see activity.")
+   
 
     # --- Display the generated report preview if available ---
     # if st.session_state.data_loaded and st.session_state.generated_report_df_display is not None:
     #     st.markdown("---")  # Add a horizontal line for separation
+    if st.session_state.generated_report_df_display is not None:
+        st.subheader("Generated Report Preview")
+        # get number of records in the dataframe
+        if st.session_state.generated_report_df_display.empty:
+            st.warning("No data available to display in the report preview.")
+            return
+        
+        df_size = st.session_state.generated_report_df_display.shape
+        if df_size[0] == 0 or df_size[1] == 0:
+            st.warning("No data available to display in the report preview.")
+            return
+        
+        st.markdown(f"**Total Records:** {df_size[0]}") # Display total number of records
 
-        if st.session_state.generated_report_df_display is not None:
-            st.subheader("Generated Report Preview")
-            # get number of records in the dataframe
-            if st.session_state.generated_report_df_display.empty:
-                st.warning("No data available to display in the report preview.")
-                return
-            
-            df_size = st.session_state.generated_report_df_display.shape
-            if df_size[0] == 0 or df_size[1] == 0:
-                st.warning("No data available to display in the report preview.")
-                return
-            
-            st.markdown(f"**Total Records:** {df_size[0]}") # Display total number of records
+        # --- Fix: Convert Story Points to string to avoid decimals and handle N/A ---
+        df_for_display_final = st.session_state.generated_report_df_display.copy()
+        df_for_display_final.index = df_for_display_final.index + 1
 
-            # --- Fix: Convert Story Points to string to avoid decimals and handle N/A ---
-            df_for_display_final = st.session_state.generated_report_df_display.copy()
-            df_for_display_final.index = df_for_display_final.index + 1
-
-            if "Story Points" in df_for_display_final.columns:
-                df_for_display_final["Story Points"] = df_for_display_final["Story Points"].apply(
-                    lambda x: str(int(x)) if isinstance(x, (int, float)) and not pd.isna(x) else 'N/A' # Convert to int then str, handle NaN
-                )
-
-            styled_df = df_for_display_final.style # Start styling here
-
-            # 1. Highlight Breached Durations (Orange)
-            styled_df = styled_df.apply(
-                lambda s: highlight_breached_durations_ui(s, cycle_threshold_hours, lead_threshold_hours), axis=1
+        if "Story Points" in df_for_display_final.columns:
+            df_for_display_final["Story Points"] = df_for_display_final["Story Points"].apply(
+                lambda x: str(int(x)) if isinstance(x, (int, float)) and not pd.isna(x) else 'N/A' # Convert to int then str, handle NaN
             )
+
+        styled_df = df_for_display_final.style # Start styling here
+
+        # 1. Highlight Breached Durations (Orange)
+        styled_df = styled_df.apply(
+            lambda s: highlight_breached_durations_ui(s, cycle_threshold_hours, lead_threshold_hours), axis=1
+        )
+        
+        # 2. Apply Workflow Heatmap (Red Gradient)
+        workflow_cols_present = [col for col in WORKFLOW_STATUSES if col in df_for_display_final.columns]
+        if workflow_cols_present:
+                styled_df = styled_df.apply(lambda row: apply_workflow_heatmap_ui(row), axis=1, subset=workflow_cols_present)
+
+        # 3. Apply Story Points Gradient (Blue Gradient)
+        if "Story Points" in df_for_display_final.columns:
+            temp_sp_series = df_for_display_final["Story Points"].apply(lambda x: float(str(x)) if str(x).replace('.','',1).isdigit() else np.nan)
             
-            # 2. Apply Workflow Heatmap (Red Gradient)
-            workflow_cols_present = [col for col in WORKFLOW_STATUSES if col in df_for_display_final.columns]
-            if workflow_cols_present:
-                 styled_df = styled_df.apply(lambda row: apply_workflow_heatmap_ui(row), axis=1, subset=workflow_cols_present)
+            numerical_sp_values = temp_sp_series.dropna()
 
-            # 3. Apply Story Points Gradient (Blue Gradient)
-            if "Story Points" in df_for_display_final.columns:
-                temp_sp_series = df_for_display_final["Story Points"].apply(lambda x: float(str(x)) if str(x).replace('.','',1).isdigit() else np.nan)
+            if not numerical_sp_values.empty:
+                min_sp_data = numerical_sp_values.min()
+                max_sp_data = numerical_sp_values.max()
                 
-                numerical_sp_values = temp_sp_series.dropna()
-
-                if not numerical_sp_values.empty:
-                    min_sp_data = numerical_sp_values.min()
-                    max_sp_data = numerical_sp_values.max()
-                    
-                    if max_sp_data == min_sp_data:
-                         single_color_val = max(0, min(1, (min_sp_data - 1) / 20.0))
-                         single_hex = calculate_heatmap_color_blue_gradient(single_color_val)
-                         styled_df = styled_df.apply(
-                             lambda s_col: [f'background-color: #{single_hex[2:]}'] * len(s_col), 
-                             subset=["Story Points"]
-                         )
-                    else:
+                if max_sp_data == min_sp_data:
+                        single_color_val = max(0, min(1, (min_sp_data - 1) / 20.0))
+                        single_hex = calculate_heatmap_color_blue_gradient(single_color_val)
                         styled_df = styled_df.apply(
-                            lambda s_col: apply_story_points_gradient_ui(s_col, min_sp_data, max_sp_data), 
+                            lambda s_col: [f'background-color: #{single_hex[2:]}'] * len(s_col), 
                             subset=["Story Points"]
                         )
-            # --- End Styling ---
+                else:
+                    styled_df = styled_df.apply(
+                        lambda s_col: apply_story_points_gradient_ui(s_col, min_sp_data, max_sp_data), 
+                        subset=["Story Points"]
+                    )
+        # --- End Styling ---
 
-            st.dataframe(styled_df, use_container_width=True, column_config={
-                "Key": st.column_config.Column(
-                    "Key",
-                    width="small",
-                    help="Jira Issue Key"
-                ),
-                "Type": st.column_config.Column(
-                    "Type",
-                    width="small",
-                    help="Jira Issue Type"
-                )
-            })
-
-            # --- Display the legend from the image ---
-            st.markdown("##### Legend")
-            st.markdown(
-                """
-                <style>
-                .legend-item {
-                    display: flex;
-                    align-items: center;
-                    margin-bottom: 5px;
-                }
-                .color-box {
-                    width: 20px;
-                    height: 20px;
-                    border: 1px solid #ccc;
-                    margin-right: 10px;
-                }
-                </style>
-                <div class="legend-item">
-                    <div class="color-box" style="background-color: #FFD580;"></div>
-                    <span>Cycle Time / Lead Time > threshold</span>
-                </div>
-                <div class="legend-item">
-                    <div class="color-box" style="background-color: #1565C0;"></div>
-                    <span>Story Points: Light → Dark Blue (low → high)</span>
-                </div>
-                <div class="legend-item">
-                    <div class="color-box" style="background-color: #FF6666;"></div>
-                    <span>Workflow: Light → Dark Red (per row, if breached)</span>
-                </div>
-                """, unsafe_allow_html=True
+        st.dataframe(styled_df, use_container_width=True, column_config={
+            "Key": st.column_config.Column(
+                "Key",
+                width="small",
+                help="Jira Issue Key"
+            ),
+            "Type": st.column_config.Column(
+                "Type",
+                width="small",
+                help="Jira Issue Type"
             )
-            # --- End Legend Display ---
+        })
+
+        # --- Display the legend from the image ---
+        st.markdown("##### Legend")
+        st.markdown(
+            """
+            <style>
+            .legend-item {
+                display: flex;
+                align-items: center;
+                margin-bottom: 5px;
+            }
+            .color-box {
+                width: 20px;
+                height: 20px;
+                border: 1px solid #ccc;
+                margin-right: 10px;
+            }
+            </style>
+            <div class="legend-item">
+                <div class="color-box" style="background-color: #FFD580;"></div>
+                <span>Cycle Time / Lead Time > threshold</span>
+            </div>
+            <div class="legend-item">
+                <div class="color-box" style="background-color: #1565C0;"></div>
+                <span>Story Points: Light → Dark Blue (low → high)</span>
+            </div>
+            <div class="legend-item">
+                <div class="color-box" style="background-color: #FF6666;"></div>
+                <span>Workflow: Light → Dark Red (per row, if breached)</span>
+            </div>
+            """, unsafe_allow_html=True
+        )
+        # --- End Legend Display ---
 
 
 # === MAIN ENTRY POINT ===
