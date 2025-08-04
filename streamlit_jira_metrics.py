@@ -114,8 +114,8 @@ if 'generated_report_filename' not in st.session_state:
 #             for msg_type, msg_content in st.session_state.app_messages:
 #                 if msg_type == "success": st.success(msg_content)
 #                 elif msg_type == "info": st.info(msg_content)
-#                 elif msg_type == "warning": st.warning(msg_content)
-#                 elif msg_type == "error": st.error(msg_content)
+#                 elif msg_type == "Warning": st.warning(msg_content)
+#                 elif msg_type == "Error": st.error(msg_content)
             
 #             if st.button("Clear all notifications", key="clear_all_notifications_btn"):
 #                 st.session_state.app_messages = []
@@ -137,7 +137,7 @@ def connect_to_jira_streamlit(url, username, api_token):
         jira = JIRA(options=jira_options, basic_auth=(username, api_token))
         return jira
     except Exception as e:
-        add_app_message("error", f"Error connecting to Jira: {e}")
+        add_app_message("Error", f"Error connecting to Jira: {e}")
         return None
 
 # --- Data Fetching Functions (adapted for Streamlit caching and inputs) ---
@@ -150,10 +150,10 @@ def get_available_projects_streamlit(jira_url, jira_username, jira_api_token):
         project_list = [{'key': p.key, 'name': p.name} for p in projects]
         return project_list
     except JIRAError as e:
-        add_app_message("error", f"Error fetching projects: {e}")
+        add_app_message("Error", f"Error fetching projects: {e}")
         return []
     except Exception as e:
-        add_app_message("error", f"An unexpected error occurred while fetching projects: {e}")
+        add_app_message("Error", f"An unexpected error occurred while fetching projects: {e}")
         return []
 
 @st.cache_data
@@ -176,7 +176,7 @@ def get_all_jira_users_streamlit(jira_url, jira_username, jira_api_token, filter
         if len(users_page) < max_results:
             break
 
-    add_app_message("info", f"Fetched {len(all_users)} active human Jira users{get_filter_status_message(filter_domain)}.")
+    add_app_message("Info", f"Fetched {len(all_users)} active human Jira users{get_filter_status_message(filter_domain)}.")
     return all_users
 
 
@@ -184,9 +184,9 @@ def fetch_users_page(jira_instance, start_at, max_results):
     try:
         return jira_instance.search_users(query='*', startAt=start_at, maxResults=max_results, includeInactive=False)
     except JIRAError as e:
-        add_app_message("error", f"Error fetching users: {e}")
+        add_app_message("Error", f"Error fetching users: {e}")
     except Exception as e:
-        add_app_message("error", f"An unexpected error occurred while fetching users: {e}")
+        add_app_message("Error", f"An unexpected error occurred while fetching users: {e}")
     return None
 
 
@@ -230,11 +230,11 @@ def get_filter_status_message(filter_domain):
 def get_custom_field_options_streamlit(jira_url, jira_username, jira_api_token, field_id, project_key, issue_type_name="Story"):
     jira_instance = connect_to_jira_streamlit(jira_url, jira_username, jira_api_token)
     if not jira_instance:
-        add_app_message("error", "Jira instance not available to fetch custom field options.")
+        add_app_message("Error", "Jira instance not available to fetch custom field options.")
         return []
 
     if not field_id:
-        add_app_message("warning", f"Cannot fetch options: No field ID provided.")
+        add_app_message("Warning", f"Cannot fetch options: No field ID provided.")
         return []
 
     field_name, is_standard_select_list = get_field_info(jira_instance, field_id)
@@ -255,7 +255,7 @@ def get_field_info(jira_instance, field_id):
         found_field_info = next((f for f in all_fields if f['id'] == field_id), None)
 
         if not found_field_info or 'schema' not in found_field_info:
-            add_app_message("warning", f"Custom field with ID '{field_id}' not found or lacks schema.")
+            add_app_message("Warning", f"Custom field with ID '{field_id}' not found or lacks schema.")
             return None, False
 
         field_schema = found_field_info.get('schema')
@@ -263,7 +263,7 @@ def get_field_info(jira_instance, field_id):
         is_standard_select_list = field_schema.get('custom', '').startswith('com.atlassian.jira.plugin.system.customfieldtypes:select')
         return field_name, is_standard_select_list
     except Exception as e:
-        add_app_message("error", f"Error fetching field info for '{field_id}': {e}")
+        add_app_message("Error", f"Error fetching field info for '{field_id}': {e}")
         return None, False
 
 
@@ -271,26 +271,26 @@ def fetch_options_from_createmeta(jira_instance, field_id, project_key, issue_ty
     try:
         createmeta = jira_instance.createmeta(projectKeys=project_key, issuetypeNames=issue_type_name, expand='projects.issuetypes.fields')
         if not createmeta or 'projects' not in createmeta or not createmeta['projects']:
-            add_app_message("warning", f"Project '{project_key}' metadata not found in createmeta.")
+            add_app_message("Warning", f"Project '{project_key}' metadata not found in createmeta.")
             return []
 
         project_meta = createmeta['projects'][0]
         issue_type_meta = next((it for it in project_meta.get('issuetypes', []) if it['name'] == issue_type_name), None)
         if not issue_type_meta or 'fields' not in issue_type_meta or field_id not in issue_type_meta['fields']:
-            add_app_message("warning", f"Field '{field_name}' ({field_id}) not found in createmeta for project '{project_key}'.")
+            add_app_message("Warning", f"Field '{field_name}' ({field_id}) not found in createmeta for project '{project_key}'.")
             return []
 
         field_meta = issue_type_meta['fields'][field_id]
         allowed_values = field_meta.get('allowedValues', [])
         options = [opt.get('value') for opt in allowed_values if isinstance(opt, dict) and 'value' in opt]
         if options:
-            add_app_message("success", f"Fetched {len(options)} options for '{field_name}' ({field_id}) via createmeta.")
+            add_app_message("Info", f"Fetched {len(options)} options for '{field_name}' ({field_id}) via createmeta.")
             return sorted(options)
         else:
-            add_app_message("warning", f"No 'allowedValues' found for '{field_name}' ({field_id}) in createmeta.")
+            add_app_message("Warning", f"No 'allowedValues' found for '{field_name}' ({field_id}) in createmeta.")
             return []
     except Exception as e:
-        add_app_message("error", f"Error fetching options from createmeta for '{field_name}' ({field_id}): {e}")
+        add_app_message("Error", f"Error fetching options from createmeta for '{field_name}' ({field_id}): {e}")
         return []
 
 
@@ -309,19 +309,19 @@ def fetch_options_from_jql(jira_instance, field_id, project_key, field_name):
 
         options = sorted(unique_options)
         if options:
-            add_app_message("success", f"Fetched {len(options)} options for '{field_name}' ({field_id}) via JQL.")
+            add_app_message("Info", f"Fetched {len(options)} options for '{field_name}' ({field_id}) via JQL.")
         else:
-            add_app_message("warning", f"No options found for '{field_name}' ({field_id}) via JQL.")
+            add_app_message("Warning", f"No options found for '{field_name}' ({field_id}) via JQL.")
         return options
     except Exception as e:
-        add_app_message("error", f"Error fetching options via JQL for '{field_name}' ({field_id}): {e}")
+        add_app_message("Error", f"Error fetching options via JQL for '{field_name}' ({field_id}): {e}")
         return []
 
 # === GET ISSUES FROM JQL ===
 def get_issues_by_jql(jql, jira_url, username, api_token):
     auth = HTTPBasicAuth(username, api_token)
     if not jql.strip():
-        add_app_message("error", "JQL query cannot be empty.")
+        add_app_message("Error", "JQL query cannot be empty.")
         st.stop()
     issue_keys = []
     start_at = 0
@@ -344,10 +344,10 @@ def get_issues_by_jql(jql, jira_url, username, api_token):
                 break
             start_at += max_results
         except requests.exceptions.RequestException as e:
-            add_app_message("error", f"Network or API error during JQL search: {e}")
+            add_app_message("Error", f"Network or API error during JQL search: {e}")
             st.stop()
         except Exception as e:
-            add_app_message("error", f"An unexpected error occurred during JQL search: {e}")
+            add_app_message("Error", f"An unexpected error occurred during JQL search: {e}")
             st.stop()
     return issue_keys
 
@@ -387,10 +387,10 @@ def get_issue_changelog(issue_key, jira_url, username, api_token):
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
-        add_app_message("error", f"Network or API error fetching changelog for {issue_key}: {e}")
+        add_app_message("Error", f"Network or API error fetching changelog for {issue_key}: {e}")
         raise
     except Exception as e:
-        add_app_message("error", f"An unexpected error occurred fetching changelog for {issue_key}: {e}")
+        add_app_message("Error", f"An unexpected error occurred fetching changelog for {issue_key}: {e}")
         raise
 
 def count_transitions(histories, from_status, to_status):
@@ -576,7 +576,7 @@ def highlight_current_sprint_multiline(sheet, headers, team_name_for_sprint):
 
     col_idx = get_column_index_by_header(sheet, "Sprints")
     if col_idx == -1:
-        add_app_message("warning", "Sprints column not found for sprint highlighting.")
+        add_app_message("Warning", "Sprints column not found for sprint highlighting.")
         return
     
     for row in sheet.iter_rows(min_row=2):
@@ -716,20 +716,20 @@ def collect_metrics_streamlit(issue_keys, jira_url, username, api_token):
             metrics = calculate_state_durations(key, issue_data)
             all_metrics.append((issue_meta, metrics))
         except requests.exceptions.RequestException as req_e:
-            add_app_message("error", f"Network error fetching issue {key}: {req_e}")
+            add_app_message("Error", f"Network error fetching issue {key}: {req_e}")
         except Exception as e:
-            add_app_message("error", f"Error processing issue {key}: {e}")
+            add_app_message("Error", f"Error processing issue {key}: {e}")
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         list(executor.map(process_issue, issue_keys))
     return all_metrics
 
 def generate_report_streamlit(issue_keys, jira_url, username, api_token, cycle_threshold, lead_threshold, file_label, selected_team_name):
-    add_app_message("info", f"Collecting metrics for {len(issue_keys)} issues. This may take a while...")
+    add_app_message("Info", f"Collecting metrics for {len(issue_keys)} issues. This may take a while...")
     all_metrics = collect_metrics_streamlit(issue_keys, jira_url, username, api_token)
     
     if not all_metrics:
-        add_app_message("warning", "No metrics collected. Report will be empty.")
+        add_app_message("Warning", "No metrics collected. Report will be empty.")
         return None, None, None
 
     headers = generate_headers()
@@ -739,7 +739,7 @@ def generate_report_streamlit(issue_keys, jira_url, username, api_token, cycle_t
 
     output_buffer = format_excel(df, file_label, cycle_threshold, lead_threshold)
     
-    add_app_message("success", "Report data generated successfully!")
+    add_app_message("Info", "Report data generated successfully!")
     return output_buffer, f"{file_label}.xlsx", df
 
 # === CALCULATE DURATIONS ===
@@ -765,7 +765,7 @@ def calculate_durations(transitions, created_time, issue_key):
         if diff >= 0:
             durations[curr] = diff
         else:
-            add_app_message("warning", f"Negative duration between {curr} and {nxt} in issue {issue_key}.")
+            add_app_message("Warning", f"Negative duration between {curr} and {nxt} in issue {issue_key}.")
 
     if ordered_statuses:
         last_status = ordered_statuses[-1]
@@ -827,7 +827,7 @@ def calculate_state_durations(issue_key, issue_data):
 def extract_issue_meta(key, issue_data):
     fields = issue_data['fields']
     if not fields:
-        add_app_message("error", f"No fields found for issue {key}.")
+        add_app_message("Error", f"No fields found for issue {key}.")
         return {}
     
     histories = issue_data['changelog']['histories']
@@ -1055,7 +1055,7 @@ def main():
         if st.button("Connect to Jira and Verify"):
             st.session_state.app_messages = [] 
             if not jira_url or not jira_username or not jira_api_token:
-                add_app_message("error", "Please enter Jira URL, Username, and API Token.")
+                add_app_message("Error", "Please enter Jira URL, Username, and API Token.")
                 return
 
             with st.spinner("Connecting to Jira..."):
@@ -1063,11 +1063,11 @@ def main():
                 if jira_instance:
                     st.session_state.jira_conn_details = (jira_url, jira_username, jira_api_token)
                     st.session_state.data_loaded = True 
-                    add_app_message("success", "Successfully connected to Jira!")
+                    add_app_message("Info", "Successfully connected to Jira!")
                 else:
                     st.session_state.jira_conn_details = None
                     st.session_state.data_loaded = False
-                    add_app_message("error", "Failed to connect to Jira. Please check your credentials.")
+                    add_app_message("Error", "Failed to connect to Jira. Please check your credentials.")
                 st.rerun()
 
     # --- Main Content Area for Report Options ---
@@ -1163,6 +1163,8 @@ def main():
             st.markdown("Click the button below to generate the report based on your selections.")
 
             if st.button("Generate Report"):
+                start_time = datetime.now()
+
                 st.session_state.app_messages = [] 
                 JQL_QUERY = ""
                 file_label = ""
@@ -1174,13 +1176,13 @@ def main():
                 if st.session_state.selected_search_option_key == 1: # JIRA Story
                     ticket_keys = st.session_state.ticket_keys_input.strip()
                     if not ticket_keys:
-                        add_app_message("error", "JIRA ticket key cannot be empty for 'JIRA Story' search.")
+                        add_app_message("Error", "JIRA ticket key cannot be empty for 'JIRA Story' search.")
                         st.stop()
                     JQL_QUERY = f"KEY IN ({ticket_keys})"
                     file_label = f"tickets_{ticket_keys.replace(',', '_')}_asof_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 else: # Team and Current Sprint OR Team and Duration
                     if not selected_team_name_for_report or not selected_team_id_for_report:
-                        add_app_message("error", "Please select a Team.")
+                        add_app_message("Error", "Please select a Team.")
                         st.stop()
                     
                     if st.session_state.selected_search_option_key == 2: # Team and Current Sprint
@@ -1193,10 +1195,10 @@ def main():
                             start_date = st.session_state.selected_custom_start_date
                             end_date = st.session_state.selected_custom_end_date
                             if not start_date or not end_date:
-                                add_app_message("error", "Please select both Start Date and End Date for custom range.")
+                                add_app_message("Error", "Please select both Start Date and End Date for custom range.")
                                 st.stop()
                             if start_date > end_date:
-                                add_app_message("error", "Start Date cannot be after End Date.")
+                                add_app_message("Error", "Start Date cannot be after End Date.")
                                 st.stop()
                             
                             start_date_str = start_date.strftime("%Y-%m-%d")
@@ -1216,10 +1218,10 @@ def main():
                             file_label = f"{selected_team_name_for_report.lower().replace(' ', '_')}_{duration_name_from_display.lower().replace(' ', '_')}_asof_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 
                 if not JQL_QUERY:
-                    add_app_message("error", "Failed to generate JQL query. Please check your selections.")
+                    add_app_message("Error", "Failed to generate JQL query. Please check your selections.")
                     st.stop()
 
-                add_app_message("info", f"Generated JQL Query: `{JQL_QUERY}`")
+                add_app_message("Info", f"Generated JQL Query: `{JQL_QUERY}`")
 
                 with st.spinner("Fetching issues and generating report..."):
                     auth_url, auth_username, auth_api_token = st.session_state.jira_conn_details
@@ -1227,12 +1229,12 @@ def main():
                     issue_keys = get_issues_by_jql(JQL_QUERY, auth_url, auth_username, auth_api_token)
                     
                     if not issue_keys:
-                        add_app_message("warning", "No issues found matching the JQL query. Report will be empty.")
+                        add_app_message("Warning", "No issues found matching the JQL query. Report will be empty.")
                         st.session_state.generated_report_df_display = None
                         st.session_state.generated_report_file_buffer = None
                         st.session_state.generated_report_filename = None
                     else:
-                        add_app_message("info", f"Found {len(issue_keys)} issues matching the JQL query.")
+                        add_app_message("Info", f"Found {len(issue_keys)} issues matching the JQL query.")
                         output_buffer, output_filename, report_df_for_display = generate_report_streamlit(
                             issue_keys, 
                             auth_url, 
@@ -1246,7 +1248,10 @@ def main():
                         st.session_state.generated_report_file_buffer = output_buffer
                         st.session_state.generated_report_filename = output_filename
                         st.session_state.generated_report_df_display = report_df_for_display
-                        add_app_message("success", f"Report generated! Ready for download: {output_filename}")
+                        add_app_message("Info", f"Report generated! Ready for download: {output_filename}")
+
+                        end_time = datetime.now()
+                        add_app_message("Info", f"Success: Data fetching complete! Duration: {end_time - start_time}")
         
         with col2:
             if st.session_state.generated_report_file_buffer:
