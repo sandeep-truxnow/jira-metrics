@@ -159,61 +159,72 @@ def get_available_projects_streamlit(jira_url, jira_username, jira_api_token):
 @st.cache_data
 def get_all_jira_users_streamlit(jira_url, jira_username, jira_api_token, filter_domain=None):
     jira_instance = connect_to_jira_streamlit(jira_url, jira_username, jira_api_token)
-    if not jira_instance: return {}
+    if not jira_instance:
+        return {}
+
     all_users = {}
-    start_at = 0; max_results = 50
+    start_at = 0
+    max_results = 50
 
     while True:
-        try:
-            users_page = jira_instance.search_users(query='*', startAt=start_at, maxResults=max_results, includeInactive=False)
-            if not users_page: break
-            for user in users_page:
-                if hasattr(user, 'accountId') and user.accountId:
-                    email_lower = user.emailAddress.lower() if hasattr(user, 'emailAddress') else ''
-                    
-                    is_atlassian_user = False
-                    if hasattr(user, 'accountType'):
-                        if user.accountType and user.accountType.lower() == 'atlassian':
-                            is_atlassian_user = True
-                    else:
-                        NON_HUMAN_KEYWORDS_FALLBACK = [
-                            '[APP]', 'automation', 'bot', 'service', 'plugin', 'jira-system',
-                            'addon', 'connect', 'integration', 'github', 'slack', 'webhook',
-                            'migrator', 'system', 'importer', 'syncer'
-                        ]
-                        display_name_lower = user.displayName.lower() if hasattr(user, 'displayName') else ''
-                        is_non_human_by_keyword = False
-                        for keyword in NON_HUMAN_KEYWORDS_FALLBACK:
-                            if keyword in display_name_lower or keyword in email_lower:
-                                is_non_human_by_keyword = True
-                                break
-                        is_atlassian_user = not is_non_human_by_keyword
-                    
-                    is_matching_domain = True
-                    if filter_domain:
-                        if not email_lower or not email_lower.endswith(f"@{filter_domain.lower()}"): 
-                            is_matching_domain = False
+        users_page = fetch_users_page(jira_instance, start_at, max_results)
+        if not users_page:
+            break
 
-                    if is_atlassian_user and is_matching_domain:
-                        all_users[user.accountId] = {
-                            'displayName': user.displayName if hasattr(user, 'displayName') else user.accountId,
-                            'emailAddress': user.emailAddress if hasattr(user, 'emailAddress') else 'N/A'
-                        }
-            start_at += max_results
-            if len(users_page) < max_results: break
-        except JIRAError as e:
-            add_app_message("error", f"Error fetching users: {e}")
+        process_users_page(users_page, all_users, filter_domain)
+        start_at += max_results
+        if len(users_page) < max_results:
             break
-        except Exception as e:
-            add_app_message("error", f"An unexpected error occurred while fetching users: {e}")
-            break
-    
-    filter_status_message = ""
-    if filter_domain:
-        filter_status_message = f" (filtered by domain '{filter_domain}')"
-    
-    add_app_message("info", f"Fetched {len(all_users)} active human Jira users{filter_status_message}.")
+
+    add_app_message("info", f"Fetched {len(all_users)} active human Jira users{get_filter_status_message(filter_domain)}.")
     return all_users
+
+
+def fetch_users_page(jira_instance, start_at, max_results):
+    try:
+        return jira_instance.search_users(query='*', startAt=start_at, maxResults=max_results, includeInactive=False)
+    except JIRAError as e:
+        add_app_message("error", f"Error fetching users: {e}")
+    except Exception as e:
+        add_app_message("error", f"An unexpected error occurred while fetching users: {e}")
+    return None
+
+
+def process_users_page(users_page, all_users, filter_domain):
+    for user in users_page:
+        if hasattr(user, 'accountId') and user.accountId:
+            email_lower = user.emailAddress.lower() if hasattr(user, 'emailAddress') else ''
+            is_atlassian_user = determine_if_atlassian_user(user, email_lower)
+            is_matching_domain = check_domain_match(email_lower, filter_domain)
+
+            if is_atlassian_user and is_matching_domain:
+                all_users[user.accountId] = {
+                    'displayName': user.displayName if hasattr(user, 'displayName') else user.accountId,
+                    'emailAddress': user.emailAddress if hasattr(user, 'emailAddress') else 'N/A'
+                }
+
+
+def determine_if_atlassian_user(user, email_lower):
+    if hasattr(user, 'accountType') and user.accountType and user.accountType.lower() == 'atlassian':
+        return True
+
+    NON_HUMAN_KEYWORDS_FALLBACK = [
+        '[APP]', 'automation', 'bot', 'service', 'plugin', 'jira-system',
+        'addon', 'connect', 'integration', 'github', 'slack', 'webhook',
+        'migrator', 'system', 'importer', 'syncer'
+    ]
+    display_name_lower = user.displayName.lower() if hasattr(user, 'displayName') else ''
+    return not any(keyword in display_name_lower or keyword in email_lower for keyword in NON_HUMAN_KEYWORDS_FALLBACK)
+
+
+def check_domain_match(email_lower, filter_domain):
+    if not filter_domain:
+        return True
+    return email_lower.endswith(f"@{filter_domain.lower()}")
+
+
+def get_filter_status_message(filter_domain):
+    return f" (filtered by domain '{filter_domain}')" if filter_domain else ""
 
 @st.cache_data
 def get_custom_field_options_streamlit(jira_url, jira_username, jira_api_token, field_id, project_key, issue_type_name="Story"):
@@ -222,158 +233,89 @@ def get_custom_field_options_streamlit(jira_url, jira_username, jira_api_token, 
         add_app_message("error", "Jira instance not available to fetch custom field options.")
         return []
 
-    options_list = []
     if not field_id:
         add_app_message("warning", f"Cannot fetch options: No field ID provided.")
         return []
 
-    field_name = "Unknown Field"
+    field_name, is_standard_select_list = get_field_info(jira_instance, field_id)
+    if not field_name:
+        return []
+
+    if is_standard_select_list:
+        options = fetch_options_from_createmeta(jira_instance, field_id, project_key, issue_type_name, field_name)
+        if options:
+            return options
+
+    return fetch_options_from_jql(jira_instance, field_id, project_key, field_name)
+
+
+def get_field_info(jira_instance, field_id):
     try:
         all_fields = jira_instance.fields()
         found_field_info = next((f for f in all_fields if f['id'] == field_id), None)
 
         if not found_field_info or 'schema' not in found_field_info:
-            add_app_message("warning", f"Warning: Custom field with ID '{field_id}' not found among all Jira fields or lacks schema.")
-            return []
+            add_app_message("warning", f"Custom field with ID '{field_id}' not found or lacks schema.")
+            return None, False
 
         field_schema = found_field_info.get('schema')
         field_name = found_field_info.get('name', 'N/A')
-
         is_standard_select_list = field_schema.get('custom', '').startswith('com.atlassian.jira.plugin.system.customfieldtypes:select')
-
-        if not is_standard_select_list:
-            add_app_message("info", f"Note: Custom field '{field_name}' ({field_id}) is not a standard Select List type based on schema.")
-            
-        if is_standard_select_list:
-            add_app_message("info", f"Attempting to fetch options for custom field '{field_name}' ({field_id}) using createmeta for project '{project_key}' and issue type '{issue_type_name}'...")
-            try:
-                createmeta = jira_instance.createmeta(projectKeys=project_key, issuetypeNames=issue_type_name, expand='projects.issuetypes.fields')
-                
-                if createmeta and 'projects' in createmeta and len(createmeta['projects']) > 0:
-                    project_meta = createmeta['projects'][0]
-                    if 'issuetypes' in project_meta and len(issue_type_meta := project_meta['issuetypes']) > 0: # Walrus operator for python >= 3.8
-                        issue_type_meta = next((it for it in project_meta['issuetypes'] if it['name'] == issue_type_name), None)
-                        if issue_type_meta and 'fields' in issue_type_meta:
-                            if field_id in issue_type_meta['fields']:
-                                field_meta = issue_type_meta['fields'][field_id]
-                                if 'allowedValues' in field_meta and isinstance(field_meta['allowedValues'], list):
-                                    for option_obj in field_meta['allowedValues']:
-                                        option_value_str = None
-                                        if isinstance(option_obj, dict) and 'value' in option_obj:
-                                            option_value_str = option_obj['value']
-                                        elif hasattr(option_obj, 'value'):
-                                            option_value_str = option_obj.value
-                                        elif hasattr(option_obj, 'name'):
-                                            option_value_str = option_obj.name
-                                        else:
-                                            option_value_str = str(option_obj)
-                                        
-                                        if option_value_str and option_value_str not in options_list:
-                                            options_list.append(option_value_str)
-                                    if options_list:
-                                        add_app_message("success", f"Successfully fetched {len(options_list)} options for '{field_name}' ({field_id}) via createmeta.")
-                                        if field_id == CUSTOM_FIELD_STORY_POINTS_ID:
-                                            filtered_options = []
-                                            for opt in options_list:
-                                                try:
-                                                    num_opt = float(opt)
-                                                    if num_opt >= 1 and num_opt == int(num_opt):
-                                                        filtered_options.append(int(num_opt))
-                                                except ValueError:
-                                                    pass
-                                            return sorted(list(set(filtered_options)))
-                                        else:
-                                            return sorted(list(set(options_list)))
-                                    else:
-                                        add_app_message("warning", f"Createmeta for '{field_name}' ({field_id}) found no 'allowedValues'.")
-                                else:
-                                    add_app_message("warning", f"Custom field '{field_name}' ({field_id}) in createmeta lacks 'allowedValues' or it's not a list.")
-                            else:
-                                add_app_message("warning", f"Custom field '{field_name}' ({field_id}) not found in createmeta fields for project '{project_key}' and issue type '{issue_type_name}'. Check if it's on the screen.")
-                        else:
-                            add_app_message("warning", f"Issue type '{issue_type_name}' fields not found in createmeta for project '{project_key}'.")
-                    else:
-                        add_app_message("warning", f"Issue type '{issue_type_name}' not found in createmeta for project '{project_key}'.")
-                else:
-                    add_app_message("warning", f"Project '{project_key}' metadata not found in createmeta.")
-
-            except JIRAError as e:
-                add_app_message("error", f"Createmeta failed for '{field_name}' ({field_id}) (Status {e.status_code}): {e.text}")
-            except Exception as e:
-                add_app_message("error", f"An unexpected error occurred while processing createmeta for '{field_id}': {e}")
-        else:
-            add_app_message("info", f"Skipping createmeta attempt for non-standard select list '{field_name}'.")
-
-        add_app_message("info", f"Attempting to fetch existing options for '{field_name}' ({field_id}) via JQL search...")
-        try:
-            jql_query = f'project = "{project_key}" AND "{field_name}" is not EMPTY'
-            issues = jira_instance.search_issues(jql_query, fields=field_id, maxResults=100)
-
-            unique_options = set()
-            for issue in issues:
-                field_value = issue.fields.__dict__.get(field_id)
-                if field_value:
-                    if isinstance(field_value, dict) and 'value' in field_value:
-                        unique_options.add(field_value['value'])
-                    elif isinstance(field_value, list):
-                        for item_obj in field_value:
-                            item_value_str = None
-                            if isinstance(item_obj, dict) and 'value' in item_obj:
-                                item_value_str = item_obj['value']
-                            elif hasattr(item_obj, 'value'):
-                                item_value_str = item_obj.value
-                            elif hasattr(item_obj, 'name'):
-                                item_value_str = item_obj.name
-                            else:
-                                item_value_str = str(item_obj)
-                            
-                            if item_value_str:
-                                unique_options.add(item_value_str)
-                    elif hasattr(field_value, 'value'):
-                        unique_options.add(field_value.value)
-                    elif hasattr(field_value, 'name'):
-                        unique_options.add(field_value.name)
-                    else:
-                        unique_options.add(str(field_value))
-
-            options_list_from_jql = sorted(list(unique_options))
-            
-            if field_id == CUSTOM_FIELD_STORY_POINTS_ID:
-                filtered_options = []
-                for opt in options_list_from_jql:
-                    try:
-                        num_opt = float(opt)
-                        if num_opt >= 1 and num_opt == int(num_opt):
-                            filtered_options.append(int(num_opt))
-                    except ValueError:
-                        pass
-                
-                if filtered_options: 
-                    add_app_message("success", f"Successfully collected {len(filtered_options)} filtered options for '{field_name}' ({field_id}) via JQL search.")
-                    return sorted(list(set(filtered_options)))
-                else: 
-                    add_app_message("warning", f"JQL search found values for '{field_name}' ({field_id}), but none were valid integer Story Points (>=1).")
-                    return []
-            if options_list_from_jql:
-                add_app_message("success", f"Successfully collected {len(options_list_from_jql)} options for '{field_name}' ({field_id}) via JQL search.")
-                return options_list_from_jql
-
-            add_app_message("warning", f"JQL search for '{field_name}' ({field_id}) found no existing issues with values for this field.")
-
-        except JIRAError as e:
-            add_app_message("error", f"JQL search for options failed (Status {e.status_code}): {e.text}")
-        except Exception as e:
-            add_app_message("error", f"An unexpected error occurred during JQL search for options for '{field_id}': {e}")
-
-
-    except JIRAError as e:
-        add_app_message("error", f"Error fetching custom field schema for '{field_id}': {e.status_code} - {e.text}")
+        return field_name, is_standard_select_list
     except Exception as e:
-        add_app_message("error", f"An unexpected error occurred while determining custom field type or fetching options for '{field_id}': {e}")
+        add_app_message("error", f"Error fetching field info for '{field_id}': {e}")
+        return None, False
 
-    add_app_message("info", f"No predefined options found for custom field '{field_name}' ({field_id}).")
-    add_app_message("info", f"Will allow free-text input for this field.")
-    return []
+
+def fetch_options_from_createmeta(jira_instance, field_id, project_key, issue_type_name, field_name):
+    try:
+        createmeta = jira_instance.createmeta(projectKeys=project_key, issuetypeNames=issue_type_name, expand='projects.issuetypes.fields')
+        if not createmeta or 'projects' not in createmeta or not createmeta['projects']:
+            add_app_message("warning", f"Project '{project_key}' metadata not found in createmeta.")
+            return []
+
+        project_meta = createmeta['projects'][0]
+        issue_type_meta = next((it for it in project_meta.get('issuetypes', []) if it['name'] == issue_type_name), None)
+        if not issue_type_meta or 'fields' not in issue_type_meta or field_id not in issue_type_meta['fields']:
+            add_app_message("warning", f"Field '{field_name}' ({field_id}) not found in createmeta for project '{project_key}'.")
+            return []
+
+        field_meta = issue_type_meta['fields'][field_id]
+        allowed_values = field_meta.get('allowedValues', [])
+        options = [opt.get('value') for opt in allowed_values if isinstance(opt, dict) and 'value' in opt]
+        if options:
+            add_app_message("success", f"Fetched {len(options)} options for '{field_name}' ({field_id}) via createmeta.")
+            return sorted(options)
+        else:
+            add_app_message("warning", f"No 'allowedValues' found for '{field_name}' ({field_id}) in createmeta.")
+            return []
+    except Exception as e:
+        add_app_message("error", f"Error fetching options from createmeta for '{field_name}' ({field_id}): {e}")
+        return []
+
+
+def fetch_options_from_jql(jira_instance, field_id, project_key, field_name):
+    try:
+        jql_query = f'project = "{project_key}" AND "{field_name}" is not EMPTY'
+        issues = jira_instance.search_issues(jql_query, fields=field_id, maxResults=100)
+
+        unique_options = set()
+        for issue in issues:
+            field_value = getattr(issue.fields, field_id, None)
+            if isinstance(field_value, dict) and 'value' in field_value:
+                unique_options.add(field_value['value'])
+            elif isinstance(field_value, list):
+                unique_options.update(opt.get('value') for opt in field_value if isinstance(opt, dict) and 'value' in opt)
+
+        options = sorted(unique_options)
+        if options:
+            add_app_message("success", f"Fetched {len(options)} options for '{field_name}' ({field_id}) via JQL.")
+        else:
+            add_app_message("warning", f"No options found for '{field_name}' ({field_id}) via JQL.")
+        return options
+    except Exception as e:
+        add_app_message("error", f"Error fetching options via JQL for '{field_name}' ({field_id}): {e}")
+        return []
 
 # === GET ISSUES FROM JQL ===
 def get_issues_by_jql(jql, jira_url, username, api_token):
@@ -460,7 +402,7 @@ def count_transitions(histories, from_status, to_status):
                 to_str = item['toString']
                 
                 if from_str == from_status and to_str == to_status:
-                    print(f"Transition found: {history['created']} - {from_str} to {to_str}")
+                    # print(f"Transition found: {history['created']} - {from_str} to {to_str}")
                     count += 1
 
     return count
@@ -475,23 +417,18 @@ def seconds_to_hm(seconds_str):
     try:
         seconds = int(seconds_str)
     except (ValueError, TypeError):
-        return "Invalid input"
+        return ""
 
     hours = seconds // 3600
     minutes = (seconds % 3600) // 60
     return f"{hours} hrs {minutes} mins"
 
 def get_logged_time(histories):
-    logged_time_in_seconds = 0
-    latest_history = histories[0] if histories else None
-    
-    for item in latest_history['items']:
-        if item['field'] == 'timespent':
-            logged_time_in_seconds = int(item['to'])
-
-    logged_time_str = seconds_to_hm(int(logged_time_in_seconds))
-
-    return logged_time_str
+    for history in histories:
+        for item in history['items']:
+            if item.get('field') == 'timespent':
+                return int(item['to'])
+    return 0
 
 # === EXCEL FORMATTER ===
 def format_excel(df, output_file_label, cycle_threshold, lead_threshold):
@@ -894,6 +831,7 @@ def extract_issue_meta(key, issue_data):
         return {}
     
     histories = issue_data['changelog']['histories']
+    # print(f"histories = {histories}...")
     sprints_field = fields.get('customfield_10010')
 
     sprint_str = "N/A"
@@ -923,7 +861,7 @@ def extract_issue_meta(key, issue_data):
     if failed_qa_count is None:
         failed_qa_count = 0  # Default to 0 if no transitions found
 
-    logged_time = get_logged_time(histories)    
+    logged_time_in_seconds = get_logged_time(histories)      
     # st.info(f"Extracted issue meta for {key}: Type={fields['issuetype']['name']}, Summary={fields['summary']}, Assignee={fields['assignee']['displayName'] if fields['assignee'] else 'Unassigned'}, Status={fields['status']['name']}, Story Points={story_points_value}, Sprints={sprint_str}, Failed QA Count={failed_qa_count}, Logged Time={logged_time}")
 
     return {
@@ -935,7 +873,7 @@ def extract_issue_meta(key, issue_data):
         "Story Points": story_points_value, # Use the potentially converted int/string value
         "Sprints": sprint_str,
         "Failed QA Count": failed_qa_count,
-        "Logged Time": logged_time,
+        "Logged Time": seconds_to_hm(logged_time_in_seconds),
     }
 
 # === GENERATE HEADERS ===
